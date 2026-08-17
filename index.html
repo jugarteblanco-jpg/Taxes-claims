@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NATO Claims">
+  <meta name="theme-color" content="#0f172a">
+  <title>NATO Expense Claims</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%231e3a8a' width='180' height='180'/><text x='50%' y='50%' font-size='80' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>NATO</text></svg>">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- ExcelJS para generar Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  
+  <!-- FileSaver para descargas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  
+  <!-- Tesseract para OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  
+  <!-- PDFKit para generar PDFs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfkit/0.13.0/pdfkit.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/blob-stream/0.1.3/blob-stream.min.js"></script>
+  
+  <style>
+    :root {
+      --tw-bg-opacity: 1;
+      --tw-text-opacity: 1;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    #root {
+      width: 100vw;
+      height: 100vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 80px;
+    }
+    
+    input[type="text"],
+    input[type="date"],
+    input[type="number"],
+    select,
+    textarea {
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+    }
+    
+    @supports (padding: max(0px)) {
+      body {
+        padding-left: max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    // Registrar Service Worker para soporte offline
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+
+  <!-- Aplicación React -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // =====================================================================
+    // DATOS Y CONFIGURACIÓN
+    // =====================================================================
+    
+    const DEFAULT_MONTHS = {
+      1: { name: 'January', days: 31 },
+      2: { name: 'February', days: 28 },
+      3: { name: 'March', days: 31 },
+      4: { name: 'April', days: 30 },
+      5: { name: 'May', days: 31 },
+      6: { name: 'June', days: 30 },
+      7: { name: 'July', days: 31 },
+      8: { name: 'August', days: 31 },
+      9: { name: 'September', days: 30 },
+      10: { name: 'October', days: 31 },
+      11: { name: 'November', days: 30 },
+      12: { name: 'December', days: 31 }
+    };
+
+    // =====================================================================
+    // COMPONENTE PRINCIPAL
+    // =====================================================================
+
+    function ExpenseClaimApp() {
+      const [currentPage, setCurrentPage] = useState('home');
+      const [settings, setSettings] = useState(() => {
+        const saved = localStorage.getItem('claimSettings');
+        return saved ? JSON.parse(saved) : {
+          rank: 'OF-4',
+          name: 'DE UGARTE',
+          delegation: 'Spanish',
+          telExt: '5756699',
+          initials: 'J',
+          vehicles: [
+            { id: 'A', make: 'TOYOTA', model: 'ESTIMA', year: '2008', capacity: '2360', avgKmL: '10' }
+          ]
+        };
+      });
+
+      const [tickets, setTickets] = useState(() => {
+        const saved = localStorage.getItem('claimTickets');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
+      const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+      // Guardar cambios en localStorage
+      useEffect(() => {
+        localStorage.setItem('claimSettings', JSON.stringify(settings));
+      }, [settings]);
+
+      useEffect(() => {
+        localStorage.setItem('claimTickets', JSON.stringify(tickets));
+      }, [tickets]);
+
+      const renderPage = () => {
+        switch(currentPage) {
+          case 'home':
+            return <HomePage setCurrentPage={setCurrentPage} tickets={tickets} selectedMonth={selectedMonth} />;
+          case 'vat':
+            return <VATTicketPage setCurrentPage={setCurrentPage} tickets={tickets} setTickets={setTickets} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />;
+          case 'fuel':
+            return <FuelTicketPage setCurrentPage={setCurrentPage} tickets={tickets} setTickets={setTickets} selectedMonth={selectedMonth} />;
+          case 'list':
+            return <TicketListPage setCurrentPage={setCurrentPage} tickets={tickets} setTickets={setTickets} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} selectedYear={selectedYear} setSelectedYear={setSelectedYear} />;
+          case 'export':
+            return <ExportPage setCurrentPage={setCurrentPage} tickets={tickets} settings={settings} selectedMonth={selectedMonth} selectedYear={selectedYear} />;
+          case 'settings':
+            return <SettingsPage setCurrentPage={setCurrentPage} settings={settings} setSettings={setSettings} />;
+          default:
+            return null;
+        }
+      };
+
+      return (
+        <div className="bg-gradient-to-b from-slate-900 via-blue-900 to-slate-900 min-h-screen text-white font-sans">
+          {/* HEADER */}
+          <div className="bg-gradient-to-r from-slate-800 to-blue-800 border-b border-blue-600 sticky top-0 z-50">
+            <div className="max-w-3xl mx-auto px-4 py-4">
+              <h1 className="text-2xl font-bold">NATO Expense Claims</h1>
+              <p className="text-blue-200 text-sm">VAT & Fuel Refund Manager</p>
+            </div>
+          </div>
+
+          {/* MAIN CONTENT */}
+          <div className="max-w-3xl mx-auto px-4 py-6 pb-24">
+            {renderPage()}
+          </div>
+
+          {/* BOTTOM NAVIGATION */}
+          <nav className="fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-blue-600 flex justify-around z-40">
+            {[
+              { id: 'home', label: 'Home' },
+              { id: 'list', label: 'Tickets' },
+              { id: 'export', label: 'Export' },
+              { id: 'settings', label: 'Setup' }
+            ].map(btn => (
+              <button
+                key={btn.id}
+                onClick={() => setCurrentPage(btn.id)}
+                className={`flex-1 py-3 transition text-sm ${
+                  currentPage === btn.id ? 'text-blue-400 border-t-2 border-blue-400' : 'text-blue-200 hover:text-blue-300'
+                }`}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      );
+    }
+
+    // =====================================================================
+    // PÁGINAS
+    // =====================================================================
+
+    function HomePage({ setCurrentPage, tickets, selectedMonth }) {
+      const monthName = DEFAULT_MONTHS[selectedMonth]?.name || 'Unknown';
+      const vatCount = tickets.filter(t => t.type === 'vat' && t.month === selectedMonth).length;
+      const fuelCount = tickets.filter(t => t.type === 'fuel' && t.month === selectedMonth).length;
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl p-8 border border-blue-500">
+            <h2 className="text-3xl font-bold mb-2">{monthName}</h2>
+            <p className="text-blue-100">Quick summary and actions</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-700 rounded-lg p-6 border border-slate-600">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-blue-300">VAT Tickets</span>
+                <div className="bg-blue-600 px-3 py-1 rounded-full text-sm font-bold">{vatCount}</div>
+              </div>
+              <button
+                onClick={() => setCurrentPage('vat')}
+                className="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded-lg text-sm"
+              >
+                + Add VAT
+              </button>
+            </div>
+
+            <div className="bg-slate-700 rounded-lg p-6 border border-slate-600">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-blue-300">Fuel Tickets</span>
+                <div className="bg-green-600 px-3 py-1 rounded-full text-sm font-bold">{fuelCount}</div>
+              </div>
+              <button
+                onClick={() => setCurrentPage('fuel')}
+                className="w-full bg-green-600 hover:bg-green-500 py-2 rounded-lg text-sm"
+              >
+                + Add Fuel
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-slate-700 rounded-lg p-6 border border-slate-600">
+            <h3 className="font-bold mb-4">Quick Actions</h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => setCurrentPage('list')}
+                className="w-full bg-slate-600 hover:bg-slate-500 py-2 rounded-lg text-sm"
+              >
+                View All Tickets
+              </button>
+              <button
+                onClick={() => setCurrentPage('export')}
+                className="w-full bg-purple-600 hover:bg-purple-500 py-2 rounded-lg text-sm"
+              >
+                Generate Forms
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function VATTicketPage({ setCurrentPage, tickets, setTickets, selectedMonth, setSelectedMonth }) {
+      const [step, setStep] = useState('select');
+      const [capturedImage, setCapturedImage] = useState(null);
+      const [extractedData, setExtractedData] = useState(null);
+      const [isProcessing, setIsProcessing] = useState(false);
+      const fileInputRef = useRef(null);
+      const videoRef = useRef(null);
+      const canvasRef = useRef(null);
+
+      const handleCapture = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' },
+            audio: false 
+          });
+          videoRef.current.srcObject = stream;
+          setStep('camera');
+        } catch (error) {
+          alert('Camera access denied: ' + error.message);
+        }
+      };
+
+      const takePhoto = () => {
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        
+        const imageData = canvas.toDataURL('image/jpeg');
+        setCapturedImage(imageData);
+        
+        video.srcObject.getTracks().forEach(track => track.stop());
+        
+        setStep('extract');
+        performOCR(imageData);
+      };
+
+      const performOCR = async (imageData) => {
+        setIsProcessing(true);
+        try {
+          // Usar Tesseract para OCR real
+          const result = await Tesseract.recognize(imageData, 'eng');
+          const text = result.data.text.toUpperCase();
+          
+          // Extraer información simple
+          const dateMatch = text.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+          const priceMatch = text.match(/£?([\d,]+\.?\d*)/);
+          
+          setExtractedData({
+            date: dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0],
+            description: 'Item purchased',
+            vat: 20,
+            total: priceMatch ? parseFloat(priceMatch[1].replace(',', '')) : 0
+          });
+          setStep('confirm');
+        } catch (error) {
+          alert('OCR processing failed');
+          setStep('select');
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      const saveTicket = () => {
+        const newTicket = {
+          id: Date.now().toString(),
+          type: 'vat',
+          month: selectedMonth,
+          date: extractedData.date,
+          description: extractedData.description,
+          vat: parseFloat(extractedData.vat),
+          total: parseFloat(extractedData.total),
+          image: capturedImage
+        };
+        setTickets([...tickets, newTicket]);
+        setStep('list');
+      };
+
+      if (step === 'select') {
+        return (
+          <div className="space-y-6">
+            <button
+              onClick={() => setCurrentPage('home')}
+              className="text-blue-400 hover:text-blue-300 mb-4 text-sm"
+            >
+              ← Back
+            </button>
+
+            <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl p-8 border border-blue-500">
+              <h2 className="text-2xl font-bold mb-2">Add VAT Ticket</h2>
+              <p className="text-blue-100 text-sm">Capture receipt or enter manually</p>
+            </div>
+
+            <div className="space-y-4">
+              <button
+                onClick={handleCapture}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-4 rounded-lg font-bold"
+              >
+                📷 Take Photo
+              </button>
+              
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full bg-slate-700 hover:bg-slate-600 py-3 rounded-lg text-sm"
+              >
+                Upload Image
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      setCapturedImage(ev.target?.result);
+                      performOCR(ev.target?.result);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+
+              <button
+                onClick={() => {
+                  setExtractedData({ date: '', description: '', vat: 20, total: 0 });
+                  setStep('confirm');
+                }}
+                className="w-full bg-slate-700 hover:bg-slate-600 py-3 rounded-lg text-sm"
+              >
+                Enter Manually
+              </button>
+            </div>
+
+            <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+              <p className="text-xs text-blue-200">
+                <strong>Tip:</strong> Take clear photos of receipts. The system will extract data automatically.
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      if (step === 'camera') {
+        return (
+          <div className="space-y-4">
+            <div className="bg-black rounded-lg overflow-hidden aspect-video">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  videoRef.current?.srcObject?.getTracks().forEach(t => t.stop());
+                  setStep('select');
+                }}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={takePhoto}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold"
+              >
+                Capture
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      if (step === 'extract') {
+        return (
+          <div className="space-y-4 py-8 text-center">
+            <p className="text-blue-300">Processing receipt...</p>
+            <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-blue-300 rounded-full animate-spin"></div>
+          </div>
+        );
+      }
+
+      if (step === 'confirm' && extractedData) {
+        return (
+          <div className="space-y-6">
+            <button
+              onClick={() => setStep('select')}
+              className="text-blue-400 hover:text-blue-300 text-sm"
+            >
+              ← Back
+            </button>
+
+            {capturedImage && (
+              <div className="rounded-lg overflow-hidden border border-slate-600">
+                <img src={capturedImage} alt="Receipt" className="w-full max-h-64 object-cover" />
+              </div>
+            )}
+
+            <div className="bg-slate-700 rounded-lg p-6 border border-slate-600 space-y-4">
+              <div>
+                <label className="block text-blue-300 text-xs mb-2">Date</label>
+                <input
+                  type="date"
+                  value={extractedData.date}
+                  onChange={(e) => setExtractedData({ ...extractedData, date: e.target.value })}
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-blue-300 text-xs mb-2">Description</label>
+                <input
+                  type="text"
+                  placeholder="Item description"
+                  value={extractedData.description}
+                  onChange={(e) => setExtractedData({ ...extractedData, description: e.target.value })}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-blue-300 text-xs mb-2">VAT %</label>
+                  <input
+                    type="number"
+                    value={extractedData.vat}
+                    onChange={(e) => setExtractedData({ ...extractedData, vat: parseFloat(e.target.value) })}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-blue-300 text-xs mb-2">Total (£)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={extractedData.total}
+                    onChange={(e) => setExtractedData({ ...extractedData, total: parseFloat(e.target.value) })}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep('select')}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg text-sm"
+              >
+                Discard
+              </button>
+              <button
+                onClick={saveTicket}
+                className="flex-1 bg-green-600 hover:bg-green-500 py-3 rounded-lg font-bold"
+              >
+                Save Ticket
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      if (step === 'list') {
+        const monthTickets = tickets
+          .filter(t => t.type === 'vat' && t.month === selectedMonth)
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        return (
+          <div className="space-y-6">
+            <button
+              onClick={() => setCurrentPage('list')}
+              className="text-blue-400 hover:text-blue-300 text-sm"
+            >
+              ← View all tickets
+            </button>
+
+            <div className="bg-slate-700 rounded-lg p-4 border border-green-600">
+              <p className="text-green-400 font-bold text-sm">✓ Ticket saved!</p>
+              <p className="text-blue-200 text-xs">{monthTickets.length} tickets this month</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setStep('select');
+                  setCapturedImage(null);
+                  setExtractedData(null);
+                }}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-sm"
+              >
+                Add Another
+              </button>
+              <button
+                onClick={() => setCurrentPage('list')}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg text-sm"
+              >
+                Review List
+              </button>
+            </div>
+          </div>
+        );
+      }
+    }
+
+    function FuelTicketPage({ setCurrentPage, tickets, setTickets, selectedMonth }) {
+      const [fuelData, setFuelData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        vehicle: 'A',
+        liters: 30,
+        pricePerLiter: 1.50,
+        totalPrice: 45.00
+      });
+
+      const saveFuelTicket = () => {
+        const newTicket = {
+          id: Date.now().toString(),
+          type: 'fuel',
+          month: selectedMonth,
+          date: fuelData.date,
+          vehicle: fuelData.vehicle,
+          liters: parseFloat(fuelData.liters),
+          pricePerLiter: parseFloat(fuelData.pricePerLiter),
+          totalPrice: parseFloat(fuelData.totalPrice)
+        };
+        setTickets([...tickets, newTicket]);
+        alert('Fuel ticket saved!');
+        setCurrentPage('list');
+      };
+
+      return (
+        <div className="space-y-6">
+          <button
+            onClick={() => setCurrentPage('home')}
+            className="text-blue-400 hover:text-blue-300 text-sm"
+          >
+            ← Back
+          </button>
+
+          <div className="bg-gradient-to-br from-green-600 to-green-800 rounded-xl p-8 border border-green-500">
+            <h2 className="text-2xl font-bold mb-2">Add Fuel Ticket</h2>
+            <p className="text-green-100 text-sm">Record fuel purchase</p>
+          </div>
+
+          <div className="bg-slate-700 rounded-lg p-6 border border-slate-600 space-y-4">
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Date</label>
+              <input
+                type="date"
+                value={fuelData.date}
+                onChange={(e) => setFuelData({ ...fuelData, date: e.target.value })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Vehicle</label>
+              <select
+                value={fuelData.vehicle}
+                onChange={(e) => setFuelData({ ...fuelData, vehicle: e.target.value })}
+                className="w-full"
+              >
+                <option value="A">Vehicle A</option>
+                <option value="B">Vehicle B</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-blue-300 text-xs mb-2">Liters</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={fuelData.liters}
+                  onChange={(e) => setFuelData({ ...fuelData, liters: parseFloat(e.target.value) })}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-blue-300 text-xs mb-2">Price/Liter (£)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={fuelData.pricePerLiter}
+                  onChange={(e) => setFuelData({ ...fuelData, pricePerLiter: parseFloat(e.target.value) })}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Total Price (£)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={fuelData.totalPrice}
+                onChange={(e) => setFuelData({ ...fuelData, totalPrice: parseFloat(e.target.value) })}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={saveFuelTicket}
+            className="w-full bg-green-600 hover:bg-green-500 py-4 rounded-lg font-bold"
+          >
+            Save Fuel Ticket
+          </button>
+        </div>
+      );
+    }
+
+    function TicketListPage({ 
+      setCurrentPage, 
+      tickets, 
+      setTickets, 
+      selectedMonth, 
+      setSelectedMonth,
+      selectedYear,
+      setSelectedYear 
+    }) {
+      const monthTickets = tickets.filter(t => t.month === selectedMonth);
+      const vatTickets = monthTickets.filter(t => t.type === 'vat').sort((a, b) => new Date(a.date) - new Date(b.date));
+      const fuelTickets = monthTickets.filter(t => t.type === 'fuel');
+
+      const deleteTicket = (id) => {
+        if (confirm('Delete this ticket?')) {
+          setTickets(tickets.filter(t => t.id !== id));
+        }
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="flex gap-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+              className="flex-1 text-sm"
+            >
+              {Object.entries(DEFAULT_MONTHS).map(([num, data]) => (
+                <option key={num} value={num}>{data.name}</option>
+              ))}
+            </select>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="text-sm"
+            >
+              {[2024, 2025, 2026, 2027].map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+
+          {vatTickets.length > 0 && (
+            <div>
+              <h3 className="font-bold mb-3 text-sm">VAT Tickets ({vatTickets.length})</h3>
+              <div className="space-y-2">
+                {vatTickets.map(ticket => (
+                  <div key={ticket.id} className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="font-bold text-sm">{ticket.date}</p>
+                        <p className="text-blue-200 text-xs">{ticket.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm">£{ticket.total.toFixed(2)}</p>
+                        <p className="text-blue-200 text-xs">{ticket.vat}% VAT</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteTicket(ticket.id)}
+                      className="text-red-400 hover:text-red-300 text-xs"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {fuelTickets.length > 0 && (
+            <div>
+              <h3 className="font-bold mb-3 text-sm">Fuel Tickets ({fuelTickets.length})</h3>
+              <div className="space-y-2">
+                {fuelTickets.map(ticket => (
+                  <div key={ticket.id} className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="font-bold text-sm">{ticket.date}</p>
+                        <p className="text-green-200 text-xs">Vehicle {ticket.vehicle} • {ticket.liters}L</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm">£{ticket.totalPrice.toFixed(2)}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteTicket(ticket.id)}
+                      className="text-red-400 hover:text-red-300 text-xs"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {monthTickets.length === 0 && (
+            <div className="bg-slate-700 rounded-lg p-8 text-center border border-slate-600">
+              <p className="text-blue-200 text-sm">No tickets for this month</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ExportPage({ setCurrentPage, tickets, settings, selectedMonth, selectedYear }) {
+      const [exportFormat, setExportFormat] = useState('excel');
+
+      const vatTickets = tickets
+        .filter(t => t.type === 'vat' && t.month === selectedMonth)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      const fuelTickets = tickets
+        .filter(t => t.type === 'fuel' && t.month === selectedMonth);
+
+      const totalVat = vatTickets.reduce((sum, t) => sum + (t.total - t.total / (1 + t.vat/100)), 0);
+
+      const handleExport = () => {
+        if (exportFormat === 'excel') {
+          exportToExcel(vatTickets, fuelTickets, settings, selectedMonth, selectedYear, totalVat);
+        } else {
+          alert('PDF export coming soon');
+        }
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-xl p-8 border border-purple-500">
+            <h2 className="text-2xl font-bold mb-2">Export Forms</h2>
+            <p className="text-purple-100 text-sm">Generate monthly claim forms</p>
+          </div>
+
+          <div className="bg-slate-700 rounded-lg p-6 border border-slate-600 space-y-4">
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Format</label>
+              <select
+                value={exportFormat}
+                onChange={(e) => setExportFormat(e.target.value)}
+                className="w-full"
+              >
+                <option value="excel">Excel (.xlsx)</option>
+                <option value="pdf">PDF</option>
+              </select>
+            </div>
+
+            <div className="bg-slate-600 rounded p-4">
+              <p className="text-blue-200 text-xs">
+                <strong>Summary:</strong><br/>
+                VAT Tickets: {vatTickets.length} (£{totalVat.toFixed(2)} VAT)<br/>
+                Fuel Tickets: {fuelTickets.length}
+              </p>
+            </div>
+          </div>
+
+          {vatTickets.length === 0 && fuelTickets.length === 0 ? (
+            <div className="bg-slate-700 rounded-lg p-8 text-center border border-slate-600">
+              <p className="text-blue-200 text-sm">No tickets to export</p>
+            </div>
+          ) : (
+            <button
+              onClick={handleExport}
+              className="w-full bg-purple-600 hover:bg-purple-500 py-4 rounded-lg font-bold text-sm"
+            >
+              Download Forms
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    function SettingsPage({ setCurrentPage, settings, setSettings }) {
+      const [editSettings, setEditSettings] = useState(settings);
+
+      const saveSettings = () => {
+        setSettings(editSettings);
+        alert('Settings saved!');
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-8 border border-slate-600">
+            <h2 className="text-2xl font-bold mb-2">Settings & Profile</h2>
+            <p className="text-slate-300 text-sm">Configure your base information</p>
+          </div>
+
+          <div className="bg-slate-700 rounded-lg p-6 border border-slate-600 space-y-4">
+            <h3 className="font-bold text-sm">Personal Information</h3>
+            
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Rank</label>
+              <input
+                type="text"
+                value={editSettings.rank}
+                onChange={(e) => setEditSettings({ ...editSettings, rank: e.target.value })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Full Name</label>
+              <input
+                type="text"
+                value={editSettings.name}
+                onChange={(e) => setEditSettings({ ...editSettings, name: e.target.value })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Delegation / Nationality</label>
+              <input
+                type="text"
+                value={editSettings.delegation}
+                onChange={(e) => setEditSettings({ ...editSettings, delegation: e.target.value })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Tel Extension</label>
+              <input
+                type="text"
+                value={editSettings.telExt}
+                onChange={(e) => setEditSettings({ ...editSettings, telExt: e.target.value })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-blue-300 text-xs mb-2">Initials</label>
+              <input
+                type="text"
+                maxLength="3"
+                value={editSettings.initials}
+                onChange={(e) => setEditSettings({ ...editSettings, initials: e.target.value })}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={saveSettings}
+            className="w-full bg-green-600 hover:bg-green-500 py-3 rounded-lg font-bold text-sm"
+          >
+            Save Settings
+          </button>
+        </div>
+      );
+    }
+
+    // =====================================================================
+    // FUNCIONES DE EXPORTACIÓN
+    // =====================================================================
+
+    function exportToExcel(vatTickets, fuelTickets, settings, month, year, totalVat) {
+      const monthName = DEFAULT_MONTHS[month]?.name || 'Unknown';
+      const fileName = `VAT_Claim_${monthName}_${settings.name.split(' ')[0]}_${year}`;
+      
+      // Para demo, usar CSV simple
+      let csv = 'NATO VAT Claim Form\n';
+      csv += `Month: ${monthName} ${year}\n`;
+      csv += `Prepared by: ${settings.rank} ${settings.name}\n`;
+      csv += `Delegation: ${settings.delegation}\n`;
+      csv += `Tel Ext: ${settings.telExt}\n\n`;
+      
+      csv += 'Date,Description,Total (£),VAT (%),VAT Amount (£)\n';
+      vatTickets.forEach(t => {
+        const vatAmount = t.total - t.total / (1 + t.vat/100);
+        csv += `"${t.date}","${t.description}","${t.total.toFixed(2)}","${t.vat}","${vatAmount.toFixed(2)}"\n`;
+      });
+      
+      csv += `\nTOTAL VAT CLAIMABLE,£${totalVat.toFixed(2)}\n`;
+      
+      if (fuelTickets.length > 0) {
+        csv += '\n\nFUEL RECORDS\n';
+        csv += 'Date,Vehicle,Liters,Price/L,Total (£)\n';
+        fuelTickets.forEach(t => {
+          csv += `"${t.date}","${t.vehicle}","${t.liters}","${t.pricePerLiter}","${t.totalPrice.toFixed(2)}"\n`;
+        });
+      }
+      
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      saveAs(blob, fileName + '.csv');
+    }
+
+    // =====================================================================
+    // RENDERIZAR APP
+    // =====================================================================
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ExpenseClaimApp />);
+  </script>
+</body>
+</html>
